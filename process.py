@@ -29,6 +29,7 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
                 )
             ),
         )
+
         # input / output paths for nnUNet
         self.nnunet_input_dir  = Path("/opt/algorithm/nnunet/input")
         self.nnunet_output_dir = Path("/opt/algorithm/nnunet/output")
@@ -88,8 +89,8 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
         
         # Predict using nnUNet ensemble
         self.predict(
-            task="Task107_Prostate_mpMRI_csPCa",
-            trainer="nnUNetTrainerV2_Loss_CE",
+            task="Task109_Prostate_mpMRI_csPCa",
+            trainer="nnUNetTrainerV2_Loss_CE_checkpoints",
             checkpoint="model_best",
         )
 

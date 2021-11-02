@@ -29,6 +29,11 @@ COPY --chown=algorithm:algorithm process.py /opt/algorithm/
 COPY --chown=algorithm:algorithm data_utils.py /opt/algorithm/
 COPY --chown=algorithm:algorithm preprocess_data.py /opt/algorithm/
 
+# Extend the nnUNet installation with custom trainers
+COPY --chown=algorithm:algorithm nnUNetTrainerV2_Loss_CE_checkpoints.py /tmp/nnUNetTrainerV2_Loss_CE_checkpoints.py
+RUN SITE_PKG=`pip3 show nnunet | grep "Location:" | awk '{print $2}'` && \
+   mv /tmp/nnUNetTrainerV2_Loss_CE_checkpoints.py "$SITE_PKG/nnunet/training/network_training/nnUNetTrainerV2_Loss_CE_checkpoints.py"
+
 ENTRYPOINT python -m process $0 $@
 
 ## ALGORITHM LABELS ##
