@@ -29,7 +29,6 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
                 )
             ),
         )
-
         # input / output paths for nnUNet
         self.nnunet_input_dir  = Path("/opt/algorithm/nnunet/input")
         self.nnunet_output_dir = Path("/opt/algorithm/nnunet/output")
@@ -87,16 +86,34 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
             align_physical_space=True,
         )
         
-        # Predict using nnUNet ensemble
-        self.predict(
-            task="Task109_Prostate_mpMRI_csPCa",
-            trainer="nnUNetTrainerV2_Loss_CE_checkpoints",
-            checkpoint="model_best",
-        )
+        # Predict using nnUNet ensemble, averaging multiple restarts
+        pred_ensemble = None
+        ensemble_count = 0
+        for trainer in [
+            "nnUNetTrainerV2_Loss_CE",
+            "nnUNetTrainerV2_Loss_CE_checkpoints",
+            "nnUNetTrainerV2_Loss_CE_checkpoints2",
+        ]:
+            self.predict(
+                task="Task107_Prostate_mpMRI_csPCa",
+                trainer=trainer,
+                checkpoint="model_best",
+            )
+            pred_path = str(self.nnunet_output_dir / "scan.npz")
+            pred = np.load(pred_path)['softmax'][1].astype('float32')
+            os.remove(pred_path)
+            if pred_ensemble is None:
+                pred_ensemble = pred
+            else:
+                pred_ensemble += pred
+            ensemble_count += 1
+
+        # Average the accumulated confidence scores
+        pred_ensemble /= ensemble_count
 
         # Convert nnUNet prediction back to physical space of input scan (T2)
         pred_itk_resampled = translate_pred_to_reference_scan_from_file(
-            pred_path = str(self.nnunet_output_dir / "scan.npz"),
+            pred = pred_ensemble,
             reference_scan_path = str(self.t2w_image),
             out_spacing = resample_uniform_spacing,
         )
@@ -148,7 +165,7 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
         subprocess.check_call(cmd)
 
 
-def translate_pred_to_reference_scan_from_file(pred_path, reference_scan_path, out_spacing):
+def translate_pred_to_reference_scan_from_file(pred=None, pred_path=None, reference_scan_path=None, out_spacing=None):
     """
     Compatibility layer for `translate_pred_to_reference_scan`
     - pred_path: path to softmax / binary prediction
@@ -158,8 +175,9 @@ def translate_pred_to_reference_scan_from_file(pred_path, reference_scan_path, o
     Returns:
     - SimpleITK Image pred_itk_resampled: 
     """
-    # read softmax prediction
-    pred = np.load(pred_path)['softmax'][1].astype('float32')
+    if pred is None:
+        # read softmax prediction
+        pred = np.load(pred_path)['softmax'][1].astype('float32')
 
     # read reference scan and resample reference to spacing of training data
     reference_scan = sitk.ReadImage(reference_scan_path, sitk.sitkFloat32)

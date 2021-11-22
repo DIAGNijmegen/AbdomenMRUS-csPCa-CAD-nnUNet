@@ -2,4 +2,4 @@
 
 ./build.sh
 
-docker save prostatecancerdetectioncontainer | gzip -c > ProstateCancerDetectionContainer.tar.gz
+docker save prostatecancerdetectioncontainer | gzip -c > AbdomenMRUS-csPCa-nnUNet-CAD-bpMRI.tar.gz
