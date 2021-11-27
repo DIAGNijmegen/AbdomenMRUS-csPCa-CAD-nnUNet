@@ -1,5 +1,10 @@
 # Clinically Significant Prostate Cancer Detection in bpMRI using models trained with Report Guided Annotations
 
+### 📖 Citation
+If you use this algorithm in your work, please cite our work:
+
+J. S. Bosma, A. Saha, M. Hosseinzadeh, H. Huisman (2021), "_Report Guided Automatic Lesion Annotation for Deep Learning Prostate Cancer Detection in bpMRI_", to be submitted
+
 ## Summary
 This algorithm predicts a heatmap for the likelihood of clinically significant prostate cancer (csPCa) using biparametric MRI (bpMRI). 
 The algorithm ensembles fifteen independent models that were trained jointly on manually and report-guided automatically annotated MRI examinations. 
