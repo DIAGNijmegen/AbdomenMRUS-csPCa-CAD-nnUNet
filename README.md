@@ -38,8 +38,7 @@ Lesion-based diagnostic performance was evaluated using Free-Response Receiver O
 | Specificity at sensitivity of  <br>radiologists (PI-RADS ≥ 4) | 68.6%          | 64.7 ± 7.1%         | 47.5%                 | 77.9%        |
 | Number of training cases                                      | 7,430          | 5,941 ± 9           | 1,584                 | N/A          |
 
-![ROC and FROC curves](https://grand-challenge-public-prod.s3.amazonaws.com/i/2021/11/26/cfbd8978-e091-407a-a871-ddf2f03d1008.png)
-**TODO**: let users click on image to open the pdf (hosted on GitHub?) to view performance in full screen & high res.
+![ROC and FROC curves](https://grand-challenge-public-prod.s3.amazonaws.com/i/2021/11/27/b82ee8d6-d049-45d1-b194-734218e7fc0f.png)
 
 *: The [CAD❋ algorithm proposed in Saha _et. al._ (2021)](https://grand-challenge.org/algorithms/prostate-mri-cad-cspca/) was used to evaluate all 300 visits from ZGT.
 
