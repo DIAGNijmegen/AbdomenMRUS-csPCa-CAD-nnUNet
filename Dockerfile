@@ -1,6 +1,4 @@
-FROM python:3.9-slim
-
-
+FROM nvcr.io/nvidia/pytorch:21.02-py3
 
 RUN groupadd -r algorithm && useradd -m --no-log-init -r -g algorithm algorithm
 

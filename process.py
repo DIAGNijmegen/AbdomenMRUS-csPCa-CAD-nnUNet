@@ -90,12 +90,12 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
         pred_ensemble = None
         ensemble_count = 0
         for trainer in [
-            "nnUNetTrainerV2_Loss_CE",
             "nnUNetTrainerV2_Loss_CE_checkpoints",
             "nnUNetTrainerV2_Loss_CE_checkpoints2",
+            "nnUNetTrainerV2_Loss_CE_checkpoints3",
         ]:
             self.predict(
-                task="Task107_Prostate_mpMRI_csPCa",
+                task="Task109_Prostate_mpMRI_csPCa",
                 trainer=trainer,
                 checkpoint="model_best",
             )
@@ -124,7 +124,7 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
         subprocess.check_call(["ls", str(self.output_dir), "-al"])
 
     def predict(self, task="Task107_Prostate_mpMRI_csPCa", trainer="nnUNetTrainerV2",
-                network="3d_fullres", checkpoint="model_final", folds="0,1,2,3,4", 
+                network="3d_fullres", checkpoint="model_best", folds="0,1,2,3,4", 
                 store_probability_maps=True, disable_augmentation=False, disable_patch_overlap=False):
         """
         Use trained nnUNet network to generate segmentation masks
