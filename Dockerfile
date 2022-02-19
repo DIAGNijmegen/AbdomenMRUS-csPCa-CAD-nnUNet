@@ -20,12 +20,12 @@ COPY --chown=algorithm:algorithm nnunet/ /opt/algorithm/nnunet/
 COPY --chown=algorithm:algorithm requirements.txt /opt/algorithm/
 RUN python -m pip install --user -r requirements.txt
 
-# Copy the processor to the algorithm container folder
-COPY --chown=algorithm:algorithm process.py /opt/algorithm/
-
 # Copy your own dependencies to the algorithm container folder
 COPY --chown=algorithm:algorithm data_utils.py /opt/algorithm/
-COPY --chown=algorithm:algorithm preprocess_data.py /opt/algorithm/
+COPY --chown=algorithm:algorithm preprocessing.py /opt/algorithm/
+
+# Copy the processor to the algorithm container folder
+COPY --chown=algorithm:algorithm process.py /opt/algorithm/
 
 # Extend the nnUNet installation with custom trainers
 COPY --chown=algorithm:algorithm nnUNetTrainerV2_Loss_CE_checkpoints.py /tmp/nnUNetTrainerV2_Loss_CE_checkpoints.py
