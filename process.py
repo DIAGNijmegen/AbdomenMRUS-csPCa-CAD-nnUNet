@@ -15,7 +15,7 @@ from pathlib import Path
 # imports required for my (Joeran) algorithm
 import SimpleITK as sitk
 from data_utils import atomic_image_write
-from preprocess_data import preprocess_study, translate_pred_to_reference_scan
+from preprocessing import preprocess_mpMRI_study, translate_pred_to_reference_scan
 
 
 
@@ -67,24 +67,53 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
         for fn in os.listdir(self.hbv_ip_dir):
             if ".mha" in fn: self.hbv_image = os.path.join(self.hbv_ip_dir, fn)
 
+    def preprocess_input(self):
+        # prepare input images to nnUNet format, with __0000.nii.gz for T2W, __0001.nii.gz for ADC and __0002.nii.gz for HBV
+        newpath_t2w = str(self.nnunet_input_dir / "scan_0000.nii.gz")
+        newpath_adc = str(self.nnunet_input_dir / "scan_0001.nii.gz")
+        newpath_hbv = str(self.nnunet_input_dir / "scan_0002.nii.gz")
+
+        # resample input scans to (0.5, 0.5, 3.6) mm/voxel,
+        # or (0.5, 0.5, 3.0) if original through-plane resolution is 3.0 mm/voxel.
+        input_scan = sitk.ReadImage(self.t2w_image)
+        through_plane_res = 3.6
+        if round(input_scan.GetSpacing()[-1], 1) == 3.0:
+            through_plane_res = 3.0
+        resample_uniform_spacing = (0.5, 0.5, through_plane_res)
+        physical_size = (through_plane_res*20, 80.0, 80.0)
+        print(f"Resampling scans to {resample_uniform_spacing} mm/voxel, with FOV of {physical_size} mm.")
+        all_scan_properties = [
+            {
+                'input_path': self.t2w_image,
+                'output_path': newpath_t2w,
+                'type': 'T2W',
+            },
+            {
+                'input_path': self.adc_image,
+                'output_path': newpath_adc,
+                'type': 'ADC',
+            },
+            {
+                'input_path': self.hbv_image,
+                'output_path': newpath_hbv,
+                'type': 'HBV',
+            },
+        ]
+
+        preprocess_mpMRI_study(
+            all_scan_properties=all_scan_properties, physical_size=physical_size, subject_id='gc-input',
+            resample_uniform_spacing=resample_uniform_spacing, align_physical_space=True,
+        )
+
+        return resample_uniform_spacing
+
     # Note: need to overwrite process because of flexible inputs, which requires custom data loading
     def process(self):
         """
         Load Bi-Parametric MRI (T2W,HBV,ADC) scans and Generate Heatmap for Prostate Cancer  
         """
-        # move input images to nnUNet format, with __0000.nii.gz for T2W, __0001.nii.gz for ADC and __0002.nii.gz for HBV
-        newpath_t2w = str(self.nnunet_input_dir / "scan_0000.nii.gz")
-        newpath_adc = str(self.nnunet_input_dir / "scan_0001.nii.gz")
-        newpath_hbv = str(self.nnunet_input_dir / "scan_0002.nii.gz")
-
         # Preprocessing
-        resample_uniform_spacing = (0.5, 0.5, 3.6)
-        preprocess_study(
-            subject_id='gc-input', path_t2w=self.t2w_image, path_adc=self.adc_image, path_hbv=self.hbv_image,
-            newpath_t2w=newpath_t2w, newpath_adc=newpath_adc, newpath_hbv=newpath_hbv, 
-            physical_size=(72.0, 80.0, 80.0), resample_uniform_spacing=resample_uniform_spacing, 
-            align_physical_space=True,
-        )
+        resample_uniform_spacing = self.preprocess_input()
         
         # Predict using nnUNet ensemble, averaging multiple restarts
         pred_ensemble = None
