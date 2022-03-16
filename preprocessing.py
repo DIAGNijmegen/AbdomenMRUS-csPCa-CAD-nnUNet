@@ -261,11 +261,11 @@ def preprocess_scans_mpMRI_study(sample, physical_size=(3.6*18, 0.5*144, 0.5*144
         # check if label has a malignancy to check correct behaviour of this function
         malignant_start = (sitk.GetArrayFromImage(lbl).sum() > 0)
 
+    should_align_scans = False
     if align_physical_space:
         # compare physical centers of the first scan (T2W) and secondary scans (ADC/high b-value/DCE).
         # The ADC and DWI scans are always the same physical space.
         main_center = all_scans[0].TransformContinuousIndexToPhysicalPoint(np.array(all_scans[0].GetSize())/2.0)
-        should_align_scans = False
         for scan in all_scans[1:]:
             secondary_center = scan.TransformContinuousIndexToPhysicalPoint(np.array(scan.GetSize())/2.0)
 
@@ -288,6 +288,9 @@ def preprocess_scans_mpMRI_study(sample, physical_size=(3.6*18, 0.5*144, 0.5*144
             # grab images
             all_scans = list(sample['features'].values())
             lbl = sample['labels']['lbl'] if 'lbl' in sample['labels'] else None
+
+    # store if we aligned the scans
+    sample['aligned_scans'] = should_align_scans
 
     # resample scans
     if resample_uniform_spacing is not None:
@@ -632,4 +635,4 @@ def preprocess_mpMRI_study(all_scan_properties, label_properties=None, subject_i
         if overwrite_files or not os.path.exists(label_properties['output_path']):
             write_itk_with_header(lbl, label_properties['output_path'], all_metadata[0])
 
-    return 1
+    return sample

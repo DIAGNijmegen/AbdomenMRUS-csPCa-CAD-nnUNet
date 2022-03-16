@@ -1,5 +1,4 @@
 import os
-import SimpleITK
 import numpy as np
 
 from evalutils import SegmentationAlgorithm
@@ -14,9 +13,9 @@ from pathlib import Path
 
 # imports required for my (Joeran) algorithm
 import SimpleITK as sitk
+import logging
 from data_utils import atomic_image_write
 from preprocessing import preprocess_mpMRI_study, translate_pred_to_reference_scan
-
 
 
 class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
@@ -100,10 +99,13 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
             },
         ]
 
-        preprocess_mpMRI_study(
+        sample = preprocess_mpMRI_study(
             all_scan_properties=all_scan_properties, physical_size=physical_size, subject_id='gc-input',
             resample_uniform_spacing=resample_uniform_spacing, align_physical_space=True,
         )
+
+        if sample['aligned_scans']:
+            logging.warning("Scans were misaligned. I've tried to align them, but this could lead to unexpected/misaligned predictions.")
 
         return resample_uniform_spacing
 
@@ -202,7 +204,7 @@ def translate_pred_to_reference_scan_from_file(pred=None, pred_path=None, refere
     - out_spacing: spacing to which the reference scan is resampled during preprocessing
 
     Returns:
-    - SimpleITK Image pred_itk_resampled: 
+    - SimpleITK Image pred_itk_resampled:
     """
     if pred is None:
         # read softmax prediction
@@ -212,7 +214,7 @@ def translate_pred_to_reference_scan_from_file(pred=None, pred_path=None, refere
     reference_scan = sitk.ReadImage(reference_scan_path, sitk.sitkFloat32)
 
     return translate_pred_to_reference_scan(pred=pred, reference_scan=reference_scan, out_spacing=out_spacing)
-    
+
 
 if __name__ == "__main__":
     Prostatecancerdetectioncontainer().process()
