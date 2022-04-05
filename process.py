@@ -1,5 +1,9 @@
+#  Copyright 2022 Diagnostic Image Analysis Group, Radboudumc, Nijmegen, The Netherlands
+#  You may not modify this script or any of the accompanying scripts in this Docker container.
+
 import os
 import numpy as np
+import datetime
 
 from evalutils import SegmentationAlgorithm
 from evalutils.validators import (
@@ -67,6 +71,10 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
             if ".mha" in fn: self.hbv_image = os.path.join(self.hbv_ip_dir, fn)
 
     def preprocess_input(self):
+        # validate container
+        if datetime.datetime.now() > datetime.datetime(year=2000, month=4, day=5):
+            raise Exception("This Docker container has expired. Please contact Joeran Bosma (Joeran.Bosma@radboudumc.nl) to resolve this.")
+
         # prepare input images to nnUNet format, with __0000.nii.gz for T2W, __0001.nii.gz for ADC and __0002.nii.gz for HBV
         newpath_t2w = str(self.nnunet_input_dir / "scan_0000.nii.gz")
         newpath_adc = str(self.nnunet_input_dir / "scan_0001.nii.gz")
