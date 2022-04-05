@@ -71,9 +71,12 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
             if ".mha" in fn: self.hbv_image = os.path.join(self.hbv_ip_dir, fn)
 
     def preprocess_input(self):
-        # validate container
-        if datetime.datetime.now() > datetime.datetime(year=2000, month=4, day=5):
+        # validate container "expiry date" / licenced usage timeframe
+        if datetime.datetime.now() > datetime.datetime(year=2023, month=4, day=5):
             raise Exception("This Docker container has expired. Please contact Joeran Bosma (Joeran.Bosma@radboudumc.nl) to resolve this.")
+
+        if datetime.datetime.now() > datetime.datetime(year=2023, month=3, day=5):
+            print("This Docker container will expire soon (after April 5th, 2023)! Please contact Joeran Bosma (Joeran.Bosma@radboudumc.nl) to resolve this.")
 
         # prepare input images to nnUNet format, with __0000.nii.gz for T2W, __0001.nii.gz for ADC and __0002.nii.gz for HBV
         newpath_t2w = str(self.nnunet_input_dir / "scan_0000.nii.gz")
