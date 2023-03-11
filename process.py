@@ -125,6 +125,15 @@ class csPCaAlgorithm(SegmentationAlgorithm):
 
     def preprocess_input(self):
         """Preprocess input images to nnUNet Raw Data Archive format"""
+        input_scan = sitk.ReadImage(self.scan_paths[-1])
+        through_plane_res = input_scan.GetSpacing()[-1]
+        if 2.9 < through_plane_res < 4.3:
+            # fake through-plane resolution to 3.6 mm
+            pass
+        else:
+            # resample through-plane resolution to 3.6 mm
+            through_plane_res = 3.6
+
         # set up Sample
         sample = Sample(
             scans=[
@@ -133,12 +142,16 @@ class csPCaAlgorithm(SegmentationAlgorithm):
             ],
             settings=PreprocessingSettings(
                 matrix_size=[20, 160, 160],
-                spacing=[3.6, 0.5, 0.5],
+                spacing=[through_plane_res, 0.5, 0.5],
             )
         )
 
         # perform preprocessing
         sample.preprocess()
+
+        # fake through-plane resolution to 3.6 mm
+        for scan in sample.scans:
+            scan.SetSpacing(scan.GetSpacing()[:-1] + (3.6,))
 
         # write preprocessed scans to nnUNet input directory
         for i, scan in enumerate(sample.scans):
