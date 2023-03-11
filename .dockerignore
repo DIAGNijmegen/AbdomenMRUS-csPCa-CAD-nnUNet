@@ -7,6 +7,7 @@
 *.vscode
 *.so
 *.sif
+*.tar.gz
 
 __pycache__/
 
