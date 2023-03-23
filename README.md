@@ -1,5 +1,15 @@
 # Clinically Significant Prostate Cancer Detection in bpMRI using models trained with Report Guided Annotations
 
+## Managed By
+Diagnostic Image Analysis Group,
+Radboud University Medical Center,
+Nijmegen, The Netherlands
+
+## Contact Information
+- Joeran Bosma: Joeran.Bosma@radboudumc.nl
+- Anindo Saha: Anindya.Shaha@radboudumc.nl
+- Henkjan Huisman: Henkjan.Huisman@radboudumc.nl
+
 ## 📖 Citation
 If you use this algorithm in your work, please cite our work:
 
@@ -17,8 +27,8 @@ The heatmap is resampled to the same spatial resolution and physical dimensions 
 ![Algorithm Overview](https://grand-challenge-public-prod.s3.amazonaws.com/social-images/algorithm/5a0fe3e6-dd36-4b5e-8759-b09cd9177c46/Prostate_MRI_csPCa_Detectio_ov3DZk3.png)
 
 
-# Mechanism
-This algorithm is a deep learning-based detection/diagnosis model, which ensembles 15 independent nnU-Net models  (5-fold cross-validation and 3 restarts). To train these models, a total of **7,430** prostate biparametric MRI (bpMRI) scans paired with a **manual or report-guided automatic annotation** ([PI-RADS v2](https://www.sciencedirect.com/science/article/pii/S0302283815008489?via%3Dihub)) were used. For a description of the report-guided automatic annotation procedure, details on the deep learning model and more, see the associated publication: 
+## Mechanism
+This algorithm is a deep learning-based detection/diagnosis model, which ensembles 15 independent nnU-Net models  (5-fold cross-validation and 3 restarts). To train these models, a total of **6,578** prostate biparametric MRI (bpMRI) scans paired with a **manual or report-guided automatic annotation** ([PI-RADS v2](https://www.sciencedirect.com/science/article/pii/S0302283815008489?via%3Dihub)) were used. For a description of the report-guided automatic annotation procedure, details on the deep learning model and more, see the associated publication: 
 
 - J. S. Bosma, A. Saha, M. Hosseinzadeh, H. Huisman (2021), "_Report Guided Automatic Lesion Annotation for Deep Learning Prostate Cancer Detection in bpMRI_", to be submitted
 

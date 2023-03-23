@@ -1,24 +1,87 @@
+#  Copyright 2022 Diagnostic Image Analysis Group, Radboudumc, Nijmegen, The Netherlands
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
+import json
 import os
-import numpy as np
-
-from evalutils import SegmentationAlgorithm
-from evalutils.validators import (
-    UniquePathIndicesValidator,
-    UniqueImagesValidator,
-)
-
-# imports required for running nnUNet algorithm
+import pickle
 import subprocess
 from pathlib import Path
+from typing import Union
 
-# imports required for my (Joeran) algorithm
+import numpy as np
 import SimpleITK as sitk
-import logging
-from data_utils import atomic_image_write
-from preprocessing import preprocess_mpMRI_study, translate_pred_to_reference_scan
+from evalutils import SegmentationAlgorithm
+from evalutils.validators import (UniqueImagesValidator,
+                                  UniquePathIndicesValidator)
+from picai_baseline.nnunet.softmax_export import \
+    save_softmax_nifti_from_softmax
+from picai_prep.data_utils import atomic_image_write
+from picai_prep.preprocessing import (PreprocessingSettings, Sample,
+                                      resample_to_reference_scan)
 
 
-class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
+class MissingSequenceError(Exception):
+    """Exception raised when a sequence is missing."""
+
+    def __init__(self, name, folder):
+        message = f"Could not find scan for {name} in {folder} (files: {os.listdir(folder)})"
+        super().__init__(message)
+
+
+class MultipleScansSameSequencesError(Exception):
+    """Exception raised when multiple scans of the same sequences are provided."""
+
+    def __init__(self, name, folder):
+        message = f"Found multiple scans for {name} in {folder} (files: {os.listdir(folder)})"
+        super().__init__(message)
+
+
+def strip_metadata(img: sitk.Image) -> None:
+    for key in img.GetMetaDataKeys():
+        img.EraseMetaData(key)
+
+
+def convert_to_original_extent(
+    pred: np.ndarray,
+    pkl_path: Union[Path, str],
+    dst_path: Union[Path, str]
+) -> sitk.Image:
+    # convert to nnUNet's internal softmax format
+    pred = np.array([1-pred, pred])
+
+    # read physical properties of current case
+    with open(pkl_path, "rb") as fp:
+        properties = pickle.load(fp)
+
+    # let nnUNet resample to original physical space
+    save_softmax_nifti_from_softmax(
+        segmentation_softmax=pred,
+        out_fname=str(dst_path),
+        properties_dict=properties,
+    )
+
+    # now each voxel in softmax.nii.gz corresponds to the same voxel in the original (T2-weighted) scan
+    pred_ensemble = sitk.ReadImage(str(dst_path))
+
+    return pred_ensemble
+
+
+class csPCaAlgorithm(SegmentationAlgorithm):
+    """
+    Wrapper to deploy nnU-Net model as a grand-challenge.org algorithm.
+    """
+
     def __init__(self):
         super().__init__(
             validators=dict(
@@ -28,96 +91,82 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
                 )
             ),
         )
-        # input / output paths for nnUNet
-        self.nnunet_input_dir  = Path("/opt/algorithm/nnunet/input")
-        self.nnunet_output_dir = Path("/opt/algorithm/nnunet/output")
-        self.nnunet_model_dir  = Path("/opt/algorithm/nnunet/results")
 
-        # input / output paths for multiple inputs (bpMRI scan in this case)
-        self.t2w_ip_dir        = Path("/input/images/transverse-t2-prostate-mri")
-        self.hbv_ip_dir        = Path("/input/images/transverse-hbv-prostate-mri")
-        self.adc_ip_dir        = Path("/input/images/transverse-adc-prostate-mri")
-        self.output_dir        = Path("/output/images/transverse-cancer-heatmap-prostate-mri")
-        self.t2w_image         = Path(self.t2w_ip_dir).glob("*.mha")
-        self.hbv_image         = Path(self.hbv_ip_dir).glob("*.mha")
-        self.adc_image         = Path(self.adc_ip_dir).glob("*.mha")
-        self.heatmap           = self.output_dir / "heatmap.mha"
+        # input / output paths for algorithm
+        self.image_input_dirs = [
+            "/input/images/transverse-t2-prostate-mri",
+            "/input/images/transverse-adc-prostate-mri",
+            "/input/images/transverse-hbv-prostate-mri",
+        ]
+        self.scan_paths = []
+        self.cspca_heatmap_path = Path("/output/images/transverse-cancer-heatmap-prostate-mri/heatmap.mha")
+
+        # input / output paths for nnUNet
+        self.nnunet_inp_dir = Path("/opt/algorithm/nnunet/input")
+        self.nnunet_out_dir = Path("/opt/algorithm/nnunet/output")
+        self.nnunet_results = Path("/opt/algorithm/results")
 
         # ensure required folders exist
-        self.nnunet_input_dir.mkdir(exist_ok=True, parents=True)
-        self.nnunet_output_dir.mkdir(exist_ok=True, parents=True)
-        self.output_dir.mkdir(exist_ok=True, parents=True)
+        self.nnunet_inp_dir.mkdir(exist_ok=True, parents=True)
+        self.nnunet_out_dir.mkdir(exist_ok=True, parents=True)
+        self.cspca_heatmap_path.parent.mkdir(exist_ok=True, parents=True)
 
         # input validation for multiple inputs
-        assert ((len(list(self.t2w_image)) * len(list(self.adc_image)) * len(list(self.hbv_image))) == 1), \
-            f"Please upload one .mha file per channel (T2W, ADC, HBV), per job, for grand-challenge.org. Received: " + \
-            f"T2W: {list(self.t2w_image)}, ADC: {list(self.adc_image)}, HBV: {list(self.hbv_image)}"
-
-        print(os.listdir(self.t2w_ip_dir))
-        print(os.listdir(self.adc_ip_dir))
-        print(os.listdir(self.hbv_ip_dir))
-
-        for fn in os.listdir(self.t2w_ip_dir):
-            if ".mha" in fn: self.t2w_image = os.path.join(self.t2w_ip_dir, fn)
-
-        for fn in os.listdir(self.adc_ip_dir):
-            if ".mha" in fn: self.adc_image = os.path.join(self.adc_ip_dir, fn)
-
-        for fn in os.listdir(self.hbv_ip_dir):
-            if ".mha" in fn: self.hbv_image = os.path.join(self.hbv_ip_dir, fn)
+        scan_glob_format = "*.mha"
+        for folder in self.image_input_dirs:
+            file_paths = list(Path(folder).glob(scan_glob_format))
+            if len(file_paths) == 0:
+                raise MissingSequenceError(name=folder.split("/")[-1], folder=folder)
+            elif len(file_paths) >= 2:
+                raise MultipleScansSameSequencesError(name=folder.split("/")[-1], folder=folder)
+            else:
+                # append scan path to algorithm input paths
+                self.scan_paths += [file_paths[0]]
 
     def preprocess_input(self):
-        # prepare input images to nnUNet format, with __0000.nii.gz for T2W, __0001.nii.gz for ADC and __0002.nii.gz for HBV
-        newpath_t2w = str(self.nnunet_input_dir / "scan_0000.nii.gz")
-        newpath_adc = str(self.nnunet_input_dir / "scan_0001.nii.gz")
-        newpath_hbv = str(self.nnunet_input_dir / "scan_0002.nii.gz")
+        """Preprocess input images to nnUNet Raw Data Archive format"""
+        input_scan = sitk.ReadImage(self.scan_paths[-1])
+        through_plane_res = input_scan.GetSpacing()[-1]
+        if 2.9 < through_plane_res < 4.3:
+            # fake through-plane resolution to 3.6 mm
+            pass
+        else:
+            # resample through-plane resolution to 3.6 mm
+            through_plane_res = 3.6
 
-        # resample input scans to (0.5, 0.5, 3.6) mm/voxel,
-        # or (0.5, 0.5, 3.0) if original through-plane resolution is 3.0 mm/voxel.
-        input_scan = sitk.ReadImage(self.t2w_image)
-        through_plane_res = 3.6
-        if round(input_scan.GetSpacing()[-1], 1) == 3.0:
-            through_plane_res = 3.0
-        resample_uniform_spacing = (0.5, 0.5, through_plane_res)
-        physical_size = (through_plane_res*20, 80.0, 80.0)
-        print(f"Resampling scans to {resample_uniform_spacing} mm/voxel, with FOV of {physical_size} mm.")
-        all_scan_properties = [
-            {
-                'input_path': self.t2w_image,
-                'output_path': newpath_t2w,
-                'type': 'T2W',
-            },
-            {
-                'input_path': self.adc_image,
-                'output_path': newpath_adc,
-                'type': 'ADC',
-            },
-            {
-                'input_path': self.hbv_image,
-                'output_path': newpath_hbv,
-                'type': 'HBV',
-            },
-        ]
-
-        sample = preprocess_mpMRI_study(
-            all_scan_properties=all_scan_properties, physical_size=physical_size, subject_id='gc-input',
-            resample_uniform_spacing=resample_uniform_spacing, align_physical_space=True,
+        # set up Sample
+        sample = Sample(
+            scans=[
+                sitk.ReadImage(str(path))
+                for path in self.scan_paths
+            ],
+            settings=PreprocessingSettings(
+                matrix_size=[20, 160, 160],
+                spacing=[through_plane_res, 0.5, 0.5],
+            )
         )
 
-        if sample['aligned_scans']:
-            logging.warning("Scans were misaligned. I've tried to align them, but this could lead to unexpected/misaligned predictions.")
+        # perform preprocessing
+        sample.preprocess()
 
-        return resample_uniform_spacing
+        # fake through-plane resolution to 3.6 mm
+        for scan in sample.scans:
+            scan.SetSpacing(scan.GetSpacing()[:-1] + (3.6,))
+
+        # write preprocessed scans to nnUNet input directory
+        for i, scan in enumerate(sample.scans):
+            path = self.nnunet_inp_dir / f"scan_{i:04d}.nii.gz"
+            atomic_image_write(scan, path)
 
     # Note: need to overwrite process because of flexible inputs, which requires custom data loading
     def process(self):
         """
-        Load Bi-Parametric MRI (T2W,HBV,ADC) scans and Generate Heatmap for Prostate Cancer  
+        Load bpMRI scans and generate heatmap for clinically significant prostate cancer
         """
-        # Preprocessing
-        resample_uniform_spacing = self.preprocess_input()
-        
-        # Predict using nnUNet ensemble, averaging multiple restarts
+        # perform preprocessing
+        self.preprocess_input()
+
+        # perform inference using nnUNet
         pred_ensemble = None
         ensemble_count = 0
         for trainer in [
@@ -125,13 +174,16 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
             "nnUNetTrainerV2_Loss_CE_checkpoints2",
             "nnUNetTrainerV2_Loss_CE_checkpoints3",
         ]:
+            # predict sample
             self.predict(
-                task="Task109_Prostate_mpMRI_csPCa",
+                task="Task141_csPCa_semisupervised_PICAI_PubPriv_RUMC",
                 trainer=trainer,
                 checkpoint="model_best",
             )
-            pred_path = str(self.nnunet_output_dir / "scan.npz")
-            pred = np.load(pred_path)['softmax'][1].astype('float32')
+
+            # read softmax prediction
+            pred_path = str(self.nnunet_out_dir / "scan.npz")
+            pred = np.array(np.load(pred_path)['softmax'][1]).astype('float32')
             os.remove(pred_path)
             if pred_ensemble is None:
                 pred_ensemble = pred
@@ -139,37 +191,44 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
                 pred_ensemble += pred
             ensemble_count += 1
 
-        # Average the accumulated confidence scores
-        pred_ensemble /= ensemble_count
+        # average the accumulated confidence scores
+        pred = pred_ensemble / ensemble_count
 
-        # Convert nnUNet prediction back to physical space of input scan (T2)
-        pred_itk_resampled = translate_pred_to_reference_scan_from_file(
-            pred = pred_ensemble,
-            reference_scan_path = str(self.t2w_image),
-            out_spacing = resample_uniform_spacing,
+        # the prediction is currently at the size and location of the nnU-Net preprocessed
+        # scan, so we need to convert it to the original extent before we continue
+        pred = convert_to_original_extent(
+            pred=pred,
+            pkl_path=self.nnunet_out_dir / "scan.pkl",
+            dst_path=self.nnunet_out_dir / "softmax.nii.gz",
         )
 
+        # convert heatmap to a SimpleITK image and infuse the physical metadata of original T2-weighted scan
+        reference_scan_original_path = str(self.scan_paths[0])
+        reference_scan_original = sitk.ReadImage(reference_scan_original_path)
+        pred = resample_to_reference_scan(pred, reference_scan_original=reference_scan_original)
+
+        # remove metadata to get rid of SimpleITK warning
+        strip_metadata(pred)
+
         # save prediction to output folder
-        atomic_image_write(pred_itk_resampled, str(self.heatmap), useCompression=True)
+        atomic_image_write(pred, str(self.cspca_heatmap_path))
 
-        subprocess.check_call(["ls", str(self.output_dir), "-al"])
-
-    def predict(self, task="Task107_Prostate_mpMRI_csPCa", trainer="nnUNetTrainerV2",
-                network="3d_fullres", checkpoint="model_best", folds="0,1,2,3,4", 
-                store_probability_maps=True, disable_augmentation=False, disable_patch_overlap=False):
+    def predict(self, task, trainer="nnUNetTrainerV2", network="3d_fullres",
+                checkpoint="model_final_checkpoint", folds="0,1,2,3,4", store_probability_maps=True,
+                disable_augmentation=False, disable_patch_overlap=False):
         """
         Use trained nnUNet network to generate segmentation masks
         """
 
         # Set environment variables
-        os.environ['RESULTS_FOLDER'] = str(self.nnunet_model_dir)
+        os.environ['RESULTS_FOLDER'] = str(self.nnunet_results)
 
         # Run prediction script
         cmd = [
             'nnUNet_predict',
             '-t', task,
-            '-i', str(self.nnunet_input_dir),
-            '-o', str(self.nnunet_output_dir),
+            '-i', str(self.nnunet_inp_dir),
+            '-o', str(self.nnunet_out_dir),
             '-m', network,
             '-tr', trainer,
             '--num_threads_preprocessing', '2',
@@ -196,25 +255,5 @@ class Prostatecancerdetectioncontainer(SegmentationAlgorithm):
         subprocess.check_call(cmd)
 
 
-def translate_pred_to_reference_scan_from_file(pred=None, pred_path=None, reference_scan_path=None, out_spacing=None):
-    """
-    Compatibility layer for `translate_pred_to_reference_scan`
-    - pred_path: path to softmax / binary prediction
-    - reference_scan_path: path to SimpleITK image to which the prediction should be resampled and resized
-    - out_spacing: spacing to which the reference scan is resampled during preprocessing
-
-    Returns:
-    - SimpleITK Image pred_itk_resampled:
-    """
-    if pred is None:
-        # read softmax prediction
-        pred = np.load(pred_path)['softmax'][1].astype('float32')
-
-    # read reference scan and resample reference to spacing of training data
-    reference_scan = sitk.ReadImage(reference_scan_path, sitk.sitkFloat32)
-
-    return translate_pred_to_reference_scan(pred=pred, reference_scan=reference_scan, out_spacing=out_spacing)
-
-
 if __name__ == "__main__":
-    Prostatecancerdetectioncontainer().process()
+    csPCaAlgorithm().process()

@@ -2,4 +2,4 @@
 
 ./build.sh
 
-docker save prostatecancerdetectioncontainer | gzip -c > AbdomenMRUS-csPCa-nnUNet-CAD-bpMRI.tar.gz
+docker save joeranbosma/prostate_cancer_detection_processor:latest | gzip -c > prostate_cancer_detection_processor.tar.gz
